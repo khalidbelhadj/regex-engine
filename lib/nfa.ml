@@ -4,20 +4,20 @@ let next_id: state ref = ref 0
 
 type char_class = {
   negated : bool;
-  ranges  : (char * char) list;   (* a single char 'a' is the range ('a','a') *)
+  ranges  : (char * char) list;
 } [@@deriving show]
 
 type transition =
   | Epsilon
   | Char of char
-  | Any                 (* '.'  — any single character *)
-  | Class of char_class (* '[...]' — membership in a set of ranges *)
+  | Any
+  | Class of char_class
+  | Save of int
   [@@deriving show]
 
-(* Does a non-epsilon transition fire on input character [c]? *)
 let accepts (on : transition) (c : char) : bool =
   match on with
-  | Epsilon -> false
+  | Epsilon | Save _ -> false
   | Char c' -> c = c'
   | Any -> true
   | Class { negated; ranges } ->
@@ -31,16 +31,13 @@ type edge = {
 } [@@deriving show]
 
 type t = {
-  repr   : string;   (* pretty-printed source, e.g. "(a|b)+" *)
+  repr   : string;
   prec   : int;
   start  : state;
   accept : state;
   edges  : edge list;
 } [@@deriving show]
 
-(* Wrap a child's repr in parens only if it binds looser than the
-   surrounding context requires. The top-level expression is never a
-   child, so it is never wrapped. *)
 let wrap (ctx: int) (g: t): string =
   if g.prec < ctx then "(" ^ g.repr ^ ")" else g.repr
 
@@ -49,7 +46,6 @@ let get_id: unit -> state = fun () ->
   next_id := !next_id + 1;
   id
 
-(* An atom: a fresh src --on--> dst fragment with the given repr. *)
 let atom (repr: string) (on: transition): t =
   let src = get_id () in
   let dst = get_id () in
@@ -76,6 +72,20 @@ let char_class (negated: bool) (ranges: (char * char) list): t =
   in
   atom repr (Class { negated; ranges })
 
+let group (k: int) (g: t): t =
+  let s = get_id () in
+  let e = get_id () in
+  {
+    repr = "(" ^ g.repr ^ ")";
+    prec = 3;
+    start = s;
+    accept = e;
+    edges =
+      { src = s;        dst = g.start; on = Save (2 * k) } ::
+      { src = g.accept; dst = e;       on = Save (2 * k + 1) } ::
+      g.edges
+  }
+
 let concat (g1: t) (g2: t): t =
   {
     repr = wrap 1 g1 ^ wrap 1 g2;
@@ -91,24 +101,25 @@ let concat3 (g1: t) (g2: t) (g3: t): t =
   let g1g2 = concat g1 g2 in
   concat g1g2 g3
 
-let star (g: t): t =
+(* Greedy vs lazy is just the order of the fork edges: drift explores a
+   node's edges in order and first-to-a-node wins, so "match more" first
+   is greedy, "match less" first is lazy. *)
+let star ?(is_lazy = false) (g: t): t =
   let s = get_id () in
   let e = get_id () in
+  let enter = { src = s;        dst = g.start; on = Epsilon } in
+  let skip  = { src = s;        dst = e;       on = Epsilon } in
+  let loop  = { src = g.accept; dst = g.start; on = Epsilon } in
+  let exit  = { src = g.accept; dst = e;       on = Epsilon } in
   {
-    repr = wrap 2 g ^ "*";
+    repr = wrap 2 g ^ (if is_lazy then "*?" else "*");
     prec = 2;
     start = s;
     accept = e;
     edges =
-      (* We have at least one *)
-      { src = s;        dst = g.start; on = Epsilon } ::
-      (* Empty *)
-      { src = s;        dst = e;       on = Epsilon } ::
-      (* Loop back *)
-      { src = g.accept; dst = g.start; on = Epsilon } ::
-      (* No more to loop *)
-      { src = g.accept; dst = e;       on = Epsilon } ::
-      g.edges
+      (if is_lazy then [ skip; enter; exit; loop ]
+       else          [ enter; skip; loop; exit ])
+      @ g.edges
   }
 
 let bar (g1: t) (g2: t): t =
@@ -120,47 +131,42 @@ let bar (g1: t) (g2: t): t =
     start = s;
     accept = e;
     edges =
-      (* Matching left graph *)
       { src = s;         dst = g1.start; on = Epsilon } ::
-      (* Matching right graph *)
       { src = s;         dst = g2.start; on = Epsilon } ::
       { src = g1.accept; dst = e;        on = Epsilon } ::
       { src = g2.accept; dst = e;        on = Epsilon } ::
       g1.edges @ g2.edges
   }
 
-let plus (g: t): t =
+let plus ?(is_lazy = false) (g: t): t =
   let s = get_id () in
   let e = get_id () in
+  let enter = { src = s;        dst = g.start; on = Epsilon } in
+  let loop  = { src = g.accept; dst = g.start; on = Epsilon } in
+  let exit  = { src = g.accept; dst = e;       on = Epsilon } in
   {
-    repr = wrap 2 g ^ "+";
+    repr = wrap 2 g ^ (if is_lazy then "+?" else "+");
     prec = 2;
     start = s;
     accept = e;
     edges =
-      (* We have at least one *)
-      { src = s;        dst = g.start; on = Epsilon } ::
-      (* Loop back *)
-      { src = g.accept; dst = g.start; on = Epsilon } ::
-      (* No more to loop *)
-      { src = g.accept; dst = e;       on = Epsilon } ::
-      g.edges
+      enter ::
+      (if is_lazy then [ exit; loop ] else [ loop; exit ])
+      @ g.edges
   }
 
-let optional (g: t): t =
+let optional ?(is_lazy = false) (g: t): t =
   let s = get_id () in
   let e = get_id () in
+  let try_ = { src = s;        dst = g.start; on = Epsilon } in
+  let skip = { src = s;        dst = e;       on = Epsilon } in
+  let exit = { src = g.accept; dst = e;       on = Epsilon } in
   {
-    repr = wrap 2 g ^ "?";
+    repr = wrap 2 g ^ (if is_lazy then "??" else "?");
     prec = 2;
     start = s;
     accept = e;
     edges =
-      (* It exists *)
-      { src = s;        dst = g.start; on = Epsilon } ::
-      (* It doesn't exist *)
-      { src = s;        dst = e;       on = Epsilon } ::
-      (* Wire up the end states *)
-      { src = g.accept; dst = e;       on = Epsilon } ::
-      g.edges
+      (if is_lazy then [ skip; try_ ] else [ try_; skip ])
+      @ (exit :: g.edges)
   }
