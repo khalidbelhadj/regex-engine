@@ -1,0 +1,29 @@
+# Dune build artifacts
+_build/
+*.install
+*.merlin
+.merlin
+
+# Local opam switch / sandbox
+_opam/
+
+# OCaml / native compilation outputs
+*.cmo
+*.cmi
+*.cmx
+*.cma
+*.cmxa
+*.cmt
+*.cmti
+*.annot
+*.o
+*.a
+*.so
+*.exe
+
+# Editor / OS noise
+.DS_Store
+*~
+*.swp
+.vscode/
+.idea/
