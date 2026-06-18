@@ -14,7 +14,7 @@ type cursor = {
   group : int;
 }
 
-let rec parse_expr (c : cursor) : Nfa.t * cursor =
+let rec parse_expr c =
   let (left, c) = parse_term c in
   let rec loop acc c =
     match c.rest with
@@ -25,7 +25,7 @@ let rec parse_expr (c : cursor) : Nfa.t * cursor =
   in
   loop left c
 
-and parse_term (c : cursor) : Nfa.t * cursor =
+and parse_term c =
   let (first, c) = parse_factor c in
   let rec loop acc c =
     match c.rest with
@@ -36,7 +36,7 @@ and parse_term (c : cursor) : Nfa.t * cursor =
   in
   loop first c
 
-and parse_factor (c : cursor) : Nfa.t * cursor =
+and parse_factor c =
   let (a, c) = parse_atom c in
   let rec apply g = function
     | '*' :: '?' :: rest -> apply (Nfa.star ~is_lazy:true g) rest
@@ -50,7 +50,7 @@ and parse_factor (c : cursor) : Nfa.t * cursor =
   let (g, rest) = apply a c.rest in
   (g, { c with rest })
 
-and parse_atom (c : cursor) : Nfa.t * cursor =
+and parse_atom c =
   match c.rest with
   | '(' :: rest ->
     let k = c.group in
@@ -64,7 +64,7 @@ and parse_atom (c : cursor) : Nfa.t * cursor =
     (Nfa.literal ch, { c with rest })
   | _ -> failwith "parse_atom: expected a character, '.', '[' or '('"
 
-and parse_class (c : cursor) : Nfa.t * cursor =
+and parse_class c =
   let (negated, input) =
     match c.rest with
     | '^' :: rest -> (true, rest)
@@ -79,7 +79,7 @@ and parse_class (c : cursor) : Nfa.t * cursor =
   let (ranges, rest) = items [] input in
   (Nfa.char_class negated ranges, { c with rest })
 
-let parse (input : string) : Nfa.t =
+let parse input =
   let chars = List.init (String.length input) (String.get input) in
   (* user groups start at 1; group 0 wraps the whole match *)
   let (g, c) = parse_expr { rest = chars; group = 1 } in

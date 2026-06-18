@@ -7,15 +7,15 @@ type thread = {
   slots : int option array;
 }
 
-let outgoing_edges (g : t) (s : state) : edge list =
+let outgoing_edges g s =
   List.filter (fun e -> e.src = s) g.edges
 
-let slot_count (g : t) : int =
+let slot_count g =
   List.fold_left
     (fun acc e -> match e.on with Save n -> max acc (n + 1) | _ -> acc)
     2 g.edges
 
-let drift (g : t) (pos : int) (seeds : thread list) : thread list =
+let drift g pos seeds =
   let rec go visited acc = function
     | [] -> List.rev acc
     | th :: rest ->
@@ -41,7 +41,7 @@ let drift (g : t) (pos : int) (seeds : thread list) : thread list =
   in
   go StateSet.empty [] seeds
 
-let step (g : t) (c : char) (threads : thread list) : thread list =
+let step g c threads =
   List.concat_map
     (fun th ->
       List.filter_map
@@ -55,11 +55,11 @@ let find_first_accepted_thread accept_state threads =
     threads
 
 (* Run the Pike VM. Returns the highest-priority full match's notebook. *)
-let exec (g : t) (input : string) : int option array option =
+let exec g input =
   let len = String.length input in
   let init = { node = g.start; slots = Array.make (slot_count g) None } in
 
-  let rec run (pos: int) (threads: thread list) =
+  let rec run pos threads =
     let drifted = drift g pos threads in
     if pos = len then
       find_first_accepted_thread g.accept drifted
@@ -70,10 +70,9 @@ let exec (g : t) (input : string) : int option array option =
   in
   run 0 [ init ]
 
-let matches (g : t) (input : string) : bool = exec g input <> None
+let matches g input = exec g input <> None
 
-let group_substring (slots : int option array) (input : string) (k : int)
-  : string option =
+let group_substring slots input k =
   match slots.(2 * k), slots.(2 * k + 1) with
   | Some a, Some b ->
     assert (0 <= a && a <= b && b <= String.length input);

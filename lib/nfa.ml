@@ -15,7 +15,7 @@ type transition =
   | Save of int
   [@@deriving show]
 
-let accepts (on : transition) (c : char) : bool =
+let accepts on c =
   match on with
   | Epsilon | Save _ -> false
   | Char c' -> c = c'
@@ -38,15 +38,15 @@ type t = {
   edges  : edge list;
 } [@@deriving show]
 
-let wrap (ctx: int) (g: t): string =
+let wrap ctx g =
   if g.prec < ctx then "(" ^ g.repr ^ ")" else g.repr
 
-let get_id: unit -> state = fun () ->
+let get_id () =
   let id = !next_id in
   next_id := !next_id + 1;
   id
 
-let atom (repr: string) (on: transition): t =
+let atom repr on =
   let src = get_id () in
   let dst = get_id () in
   {
@@ -57,11 +57,11 @@ let atom (repr: string) (on: transition): t =
     edges = [ { src; dst; on } ];
   }
 
-let literal (c: char): t = atom (String.make 1 c) (Char c)
+let literal c = atom (String.make 1 c) (Char c)
 
-let any (): t = atom "." Any
+let any () = atom "." Any
 
-let char_class (negated: bool) (ranges: (char * char) list): t =
+let char_class negated ranges =
   let show_range (lo, hi) =
     if lo = hi then String.make 1 lo
     else Printf.sprintf "%c-%c" lo hi
@@ -72,7 +72,7 @@ let char_class (negated: bool) (ranges: (char * char) list): t =
   in
   atom repr (Class { negated; ranges })
 
-let group (k: int) (g: t): t =
+let group k g =
   let s = get_id () in
   let e = get_id () in
   {
@@ -86,7 +86,7 @@ let group (k: int) (g: t): t =
       g.edges
   }
 
-let concat (g1: t) (g2: t): t =
+let concat g1 g2 =
   {
     repr = wrap 1 g1 ^ wrap 1 g2;
     prec = 1;
@@ -97,14 +97,14 @@ let concat (g1: t) (g2: t): t =
       g1.edges @ g2.edges
   }
 
-let concat3 (g1: t) (g2: t) (g3: t): t =
+let concat3 g1 g2 g3 =
   let g1g2 = concat g1 g2 in
   concat g1g2 g3
 
 (* Greedy vs lazy is just the order of the fork edges: drift explores a
    node's edges in order and first-to-a-node wins, so "match more" first
    is greedy, "match less" first is lazy. *)
-let star ?(is_lazy = false) (g: t): t =
+let star ?(is_lazy = false) g =
   let s = get_id () in
   let e = get_id () in
   let enter = { src = s;        dst = g.start; on = Epsilon } in
@@ -122,7 +122,7 @@ let star ?(is_lazy = false) (g: t): t =
       @ g.edges
   }
 
-let bar (g1: t) (g2: t): t =
+let bar g1 g2 =
   let s = get_id () in
   let e = get_id () in
   {
@@ -138,7 +138,7 @@ let bar (g1: t) (g2: t): t =
       g1.edges @ g2.edges
   }
 
-let plus ?(is_lazy = false) (g: t): t =
+let plus ?(is_lazy = false) g =
   let s = get_id () in
   let e = get_id () in
   let enter = { src = s;        dst = g.start; on = Epsilon } in
@@ -155,7 +155,7 @@ let plus ?(is_lazy = false) (g: t): t =
       @ g.edges
   }
 
-let optional ?(is_lazy = false) (g: t): t =
+let optional ?(is_lazy = false) g =
   let s = get_id () in
   let e = get_id () in
   let try_ = { src = s;        dst = g.start; on = Epsilon } in

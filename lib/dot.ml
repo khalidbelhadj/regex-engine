@@ -2,7 +2,7 @@ open Nfa
 
 module StateSet = Set.Make (Int)
 
-let escape (s : string) : string =
+let escape s =
   String.concat ""
     (List.map
        (fun c ->
@@ -12,7 +12,7 @@ let escape (s : string) : string =
          | c -> String.make 1 c)
        (List.init (String.length s) (String.get s)))
 
-let label_of (on : transition) : string =
+let label_of on =
   match on with
   | Epsilon -> "ε"
   | Char c -> String.make 1 c
@@ -27,21 +27,21 @@ let label_of (on : transition) : string =
     if n land 1 = 0 then Printf.sprintf "open %d" (n / 2)
     else Printf.sprintf "close %d" (n / 2)
 
-let all_states (g : t) : StateSet.t =
+let all_states g =
   List.fold_left
     (fun acc e -> StateSet.add e.src (StateSet.add e.dst acc))
     (StateSet.add g.start (StateSet.singleton g.accept))
     g.edges
 
-let letters (i : int) : string =
+let letters i =
   String.make (i / 26 + 1) (Char.chr (Char.code 'A' + (i mod 26)))
 
-let state_labels (g : t) : (state, string) Hashtbl.t =
+let state_labels g =
   let tbl = Hashtbl.create 16 in
   List.iteri (fun i s -> Hashtbl.add tbl s (letters i)) (StateSet.elements (all_states g));
   tbl
 
-let to_dot (g : t) : string =
+let to_dot g =
   let labels = state_labels g in
   let name s = Hashtbl.find labels s in
   let buf = Buffer.create 256 in
